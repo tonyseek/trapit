@@ -98,6 +98,8 @@ int cmd_trap(const char *prog, int argc, char **argv) noexcept {
         }
     }
 
+    sleep(5);  // Wait the inspectors to start up
+
     execvp(exec_argv[0], (char *const *) exec_argv);
     std::cerr << "Cannot execute " << exec_argv[0] << ": "
         << strerror(errno) << " (errno=" << errno << ")" << std::endl;
