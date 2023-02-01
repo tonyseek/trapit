@@ -30,18 +30,28 @@ cmd_clean() {
 }
 
 cmd_build() {
+  BUILD_TYPE="${1:-Release}"
   set -x
   if [ -z "$(command -v ninja)" ]; then
-    cmake_configure
+    cmake_configure -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
   else
-    cmake_configure -G Ninja
+    cmake_configure -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -G Ninja
   fi
   cmake_build
 }
 
 cmd_run() {
   cmd_build
-  exec "${BUILD_DIR}/${BUILD_BIN}"
+  exec "${BUILD_DIR}/${BUILD_BIN}" "$@"
+}
+
+cmd_dbg() {
+  cmd_build Debug
+  if command -v gdb > /dev/null; then
+    exec gdb --args "${BUILD_DIR}/${BUILD_BIN}" "$@"
+  else
+    exec lldb -- "${BUILD_DIR}/${BUILD_BIN}" "$@"
+  fi
 }
 
 case "$1" in
@@ -55,7 +65,12 @@ case "$1" in
     cmd_build
     ;;
   run)
-    cmd_run
+    shift
+    cmd_run "$@"
+    ;;
+  dbg)
+    shift
+    cmd_dbg "$@"
     ;;
   *)
     cmd_help
