@@ -41,7 +41,7 @@ cmd_build() {
 
 cmd_run() {
   cmd_build
-  exec "${BUILD_DIR}/${BUILD_BIN}"
+  exec "${BUILD_DIR}/${BUILD_BIN}" "$@"
 }
 
 case "$1" in
@@ -55,7 +55,8 @@ case "$1" in
     cmd_build
     ;;
   run)
-    cmd_run
+    shift
+    cmd_run "$@"
     ;;
   *)
     cmd_help
