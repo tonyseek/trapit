@@ -24,16 +24,19 @@ enum class DiscoverMode { server, client };
 
 class Discover {
  private:
-  int fd;
-  in_port_t port;
-  DiscoverMode mode;
+  int m_fd;
+  in_port_t m_port;
+  DiscoverMode m_mode;
+  pid_t m_pid;
+  int set_timeout(uint32_t) noexcept;
 
  public:
-  explicit Discover(in_port_t port, DiscoverMode mode) noexcept;
+  explicit Discover(in_port_t, DiscoverMode) noexcept;
   ~Discover();
   Discover(const Discover &) = delete;             // non-copyable
   Discover &operator=(const Discover &) = delete;  // non-copyable
   int run() noexcept;
+  pid_t pid() const noexcept;
 };
 
 int main(int argc, char **argv) {
@@ -96,47 +99,70 @@ int cmd_trap(const char *prog, int argc, char **argv) noexcept {
     }
 
     execvp(exec_argv[0], (char *const *) exec_argv);
-    std::cerr << "Cannot execute " << exec_argv[0] << ": " <<
-        strerror(errno) << " (errno=" << errno << ")" << std::endl;
+    std::cerr << "Cannot execute " << exec_argv[0] << ": "
+        << strerror(errno) << " (errno=" << errno << ")" << std::endl;
     return 1;
 }
 
 int cmd_wake(const char *prog, int argc, char **argv) noexcept {
-    std::cout << "Work-in-Progress: wake" << std::endl;
+    Discover d(TRAPIT_PORT, DiscoverMode::client);
+    if (d.run() != 0) {
+        return 1;
+    }
+    std::cout << d.pid() << std::endl;
     return 0;
 }
 
 Discover::Discover(in_port_t port, DiscoverMode mode) noexcept
-    : fd(-1), port(port), mode(mode) {}
+    : m_fd(-1), m_port(port), m_mode(mode), m_pid(getpid()) {}
 
 Discover::~Discover() {
-    if (fd > 0) {
-        close(fd);
+    if (m_fd > 0) {
+        close(m_fd);
     }
 }
 
+int Discover::set_timeout(uint32_t secs) noexcept {
+    int r;
+    struct timeval timeout = { .tv_sec = secs, .tv_usec = 0 };
+    const void *opt = &timeout;
+    socklen_t nopt = sizeof(timeout);
+
+    r = setsockopt(m_fd, SOL_SOCKET, SO_RCVTIMEO, opt, nopt);
+    if (r < 0) {
+        return r;
+    }
+
+    r = setsockopt(m_fd, SOL_SOCKET, SO_SNDTIMEO, opt, nopt);
+    if (r < 0) {
+        return r;
+    }
+
+    return 0;
+}
+
 int Discover::run() noexcept {
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) {
-        std::cerr << "Cannot create socket FD: " << strerror(errno) <<
-            " (errno=" << errno << ")" << std::endl;
-        return fd;
+    m_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (m_fd < 0) {
+        std::cerr << "Cannot create socket FD: " << strerror(errno)
+            << " (errno=" << errno << ")" << std::endl;
+        return m_fd;
     }
 
     struct sockaddr_in addr {
         .sin_family = AF_INET,
-        .sin_port = htons(port),
+        .sin_port = htons(m_port),
         .sin_addr = {
             .s_addr = inet_addr("127.0.0.1"),
         },
     };
 
-    switch (mode) {
+    switch (m_mode) {
         case DiscoverMode::server:
-            if (bind(fd, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
-                std::cerr << "Cannot bind " << fd << "on 127.0.0.1:" << port <<
-                    ": " << strerror(errno) << " (errno=" << errno << ")" <<
-                    std::endl;
+            if (bind(m_fd, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
+                std::cerr << "Cannot bind " << m_fd << "on 127.0.0.1:"
+                    << m_port << ": " << strerror(errno) << " (errno="
+                    << errno << ")" << std::endl;
                 return -1;
             }
             while (1) {
@@ -145,39 +171,39 @@ int Discover::run() noexcept {
                 struct sockaddr_in caddr;
                 socklen_t ncaddr;
                 csize = recvfrom(
-                    fd, &cdata, sizeof(cdata), 0, (struct sockaddr *) &caddr,
+                    m_fd, &cdata, sizeof(cdata), 0, (struct sockaddr *) &caddr,
                     &ncaddr);
                 if (csize < 0) {
-                    std::cerr << "Cannot recvfrom " << fd << ":" <<
-                        strerror(errno) << " (errno=" << errno << ")" <<
-                        std::endl;
+                    if (errno == EINTR) {
+                        continue;
+                    }
+                    std::cerr << "Cannot recvfrom " << m_fd << ":"
+                        << strerror(errno) << " (errno=" << errno << ")"
+                        << std::endl;
                     return csize;
                 }
                 if (ncaddr == 0) {
                     ncaddr = sizeof(caddr);  // Fix compatibility of macOS
                 }
 
-                pid_t pid;
-                uint32_t pidnl;
-                char pidbuf[sizeof(pidnl)];
+                pid_t pidh = pid();
+                uint32_t pidn;
+                char pidbuf[sizeof(pidn)];
 
-                if (csize == sizeof(cdata) && cdata == '\n') {
-                    pid = getpid();
-                } else {
-                    pid = 0;
+                if (csize != sizeof(cdata) || cdata != '\n') {
+                    pidh = 0;
                 }
-
-                pidnl = htonl(pid);
-                memcpy(pidbuf, &pidnl, sizeof(pidnl));
+                pidn = htonl(pidh);
+                memcpy(pidbuf, &pidn, sizeof(pidn));
 
                 ssize_t nsent = sendto(
-                    fd, pidbuf, sizeof(pidbuf), 0, (struct sockaddr *) &caddr,
+                    m_fd, pidbuf, sizeof(pidbuf), 0, (struct sockaddr *) &caddr,
                     ncaddr);
                 if (nsent != sizeof(pidbuf)) {
                     continue;
                 }
 
-                if (pid > 0) {
+                if (pidh > 0) {
                     return 0;
                 } else {
                     continue;
@@ -185,8 +211,60 @@ int Discover::run() noexcept {
             }
             break;
         case DiscoverMode::client:
+            set_timeout(1);
+            (void) connect(m_fd, (struct sockaddr *) &addr, sizeof(addr));
+
+            while (1) {
+                char cdata = '\n';
+                ssize_t nsent = send(m_fd, &cdata, sizeof(cdata), 0);
+                if (nsent == -1 && errno != EAGAIN) {
+                    if (errno == EINTR) {
+                        continue;
+                    }
+                    std::cerr << "Cannot contact the trapped process. "
+                        << "Trying again. "
+                        << strerror(errno) << " (errno=" << errno << ")"
+                        << std::endl;
+                    sleep(1);
+                    continue;
+                }
+
+                uint32_t pidn;
+                char pidbuf[sizeof(pidn)];
+                while (1) {
+                    ssize_t nrecv = recv(m_fd, &pidbuf, sizeof(pidbuf), 0);
+                    if (nrecv == -1) {
+                        if (errno == EINTR) {
+                            continue;
+                        }
+                        if (errno == ECONNREFUSED) {
+                            sleep(1);
+                            break;
+                        }
+                        if (errno == EAGAIN) {
+                            break;
+                        }
+                        std::cerr << "Cannot get PID of the trapped process: "
+                            << strerror(errno) << " (errno=" << errno << ")"
+                            << std::endl;
+                        return 1;
+                    }
+                    memcpy(&pidn, pidbuf, sizeof(pidbuf));
+                    m_pid = ntohl(pidn);
+                    if (m_pid == 0) {
+                        std::cerr << "Incorrect PID from the trapped process."
+                            << std::endl;
+                        return 1;
+                    }
+                    return 0;
+                }
+            }
             break;
     }
 
     return 0;
+}
+
+pid_t Discover::pid() const noexcept {
+    return m_pid;
 }
