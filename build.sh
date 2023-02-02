@@ -5,6 +5,7 @@ set -e
 SOURCE_DIR="$(pwd)"
 BUILD_DIR="${SOURCE_DIR}/build"
 BUILD_BIN="trapit"
+PACK_DIR="${SOURCE_DIR}/build/dist"
 
 if ! [ -f "${SOURCE_DIR}/CMakeLists.txt" ]; then
   printf >&2 'ERROR: %s is not the source directory which includes %s' \
@@ -40,6 +41,27 @@ cmd_build() {
   cmake_build
 }
 
+cmd_pack() {
+  cmd_clean
+  cmd_build
+  (
+    cd "${BUILD_DIR}"
+    cpack -G TXZ --config CPackSourceConfig.cmake
+    cpack -G TXZ
+    if command -v dpkg > /dev/null; then
+      cpack -G DEB
+    else
+      printf >&2 '=> Skip to pack DEB because lack of "dpkg" (dpkg)\n'
+    fi
+    if command -v rpmbuild > /dev/null; then
+      cpack -G RPM
+    else
+      printf >&2 '=> Skip to pack RPM because lack of "rpm-tools" (rpmbuild)\n'
+    fi
+    rm -rf "${PACK_DIR}/_CPack_Packages"
+  )
+}
+
 cmd_run() {
   cmd_build
   exec "${BUILD_DIR}/${BUILD_BIN}" "$@"
@@ -63,6 +85,9 @@ case "$1" in
     ;;
   build)
     cmd_build
+    ;;
+  pack)
+    cmd_pack
     ;;
   run)
     shift
