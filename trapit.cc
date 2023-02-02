@@ -16,7 +16,14 @@
 #define TRAPIT_PORT 26842
 #endif
 
+#ifndef TRAPIT_VERSION
+#define TRAPIT_VERSION "unstable"
+#endif
+
+const std::string version(TRAPIT_VERSION);
+
 int cmd_usage(const char *prog) noexcept;
+int cmd_version(const char *prog) noexcept;
 int cmd_trap(const char *prog, int argc, char **argv) noexcept;
 int cmd_wake(const char *prog, int argc, char **argv) noexcept;
 
@@ -56,6 +63,8 @@ int main(int argc, char **argv) {
     } else if (strcmp(argv[1], "help") == 0) {
         cmd_usage(argv[0]);
         return 0;
+    } else if (strcmp(argv[1], "version") == 0) {
+        return cmd_version(argv[0]);
     } else {
         return cmd_usage(argv[0]);
     }
@@ -65,10 +74,15 @@ int main(int argc, char **argv) {
 int cmd_usage(const char *prog) noexcept {
     const char *hl = "Usage: ";
     const char *pr = "       ";
-    std::cerr << hl << prog << " [exec|wake|help]" << std::endl;
+    std::cerr << hl << prog << " [exec|wake|version|help]" << std::endl;
     std::cerr << pr << prog << " exec -- [argument ...]" << std::endl;
     std::cerr << pr << prog << " wake" << std::endl;
     return 2;
+}
+
+int cmd_version(const char *prog) noexcept {
+    std::cout << version << std::endl;
+    return 0;
 }
 
 int cmd_trap(const char *prog, int argc, char **argv) noexcept {
