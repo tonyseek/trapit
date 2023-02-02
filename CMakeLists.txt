@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.22..3.25)
-project(trapit)
+project(trapit VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_executable(trapit trapit.cc)
+target_compile_definitions(
+  trapit PRIVATE TRAPIT_VERSION="${CMAKE_PROJECT_VERSION}")
 install(TARGETS trapit)
 
 set(CPACK_PACKAGE_VENDOR "Jiangge Zhang <tonyseek@gmail.com>")
