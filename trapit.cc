@@ -87,7 +87,7 @@ int cmd_version(const char *prog) noexcept {
 
 int cmd_trap(const char *prog, int argc, char **argv) noexcept {
     /*
-     * Layout: [ARG 0] [ARG 0] [ARG 1] ... [NULL]
+     * Layout: [ARG 0] [ARG 1] ... [NULL]
      */
     const char *exec_argv[TRAPIT_MAX_ARGS];
 
@@ -98,9 +98,8 @@ int cmd_trap(const char *prog, int argc, char **argv) noexcept {
             << " arguments, got " << argc << " arguments";
         return 1;
     } else {
-        exec_argv[0] = argv[0];
         for (int i = 0; i < argc; i++) {
-            exec_argv[i + 1] = argv[i];
+            exec_argv[i] = argv[i];
         }
         exec_argv[argc + 1] = NULL;
     }
